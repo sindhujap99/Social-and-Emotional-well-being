@@ -6,10 +6,12 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    // Accept either { text } or { userMessage } for convenience
+    // Accept either { text } or { userMessage }
     const body = req.body || {};
-    const userText = (typeof body.text === "string" && body.text.trim()) ||
-                     (typeof body.userMessage === "string" && body.userMessage.trim());
+    const userText =
+      (typeof body.text === "string" && body.text.trim()) ||
+      (typeof body.userMessage === "string" && body.userMessage.trim());
+
     if (!userText) {
       return res.status(400).json({ error: "Missing 'text' (or 'userMessage')" });
     }
@@ -22,7 +24,7 @@ module.exports = async function handler(req, res) {
       return res.status(500).json({ error: "Missing GEMINI_API_KEY on server" });
     }
 
-    // ---------- System prompt (trust-building + safety) ----------
+    // -------- System prompt (trust-building + safety) --------
     const SYSTEM_PROMPT = `
 You are a supportive school wellbeing guide for students ages 11–18. Many students hesitate to talk to parents, teachers, or counselors, so your role is to gently build trust, normalize their feelings, and suggest safe, constructive ways to reach out for support.
 
@@ -45,7 +47,7 @@ Safety rules:
 - Avoid collecting names, locations, or other personal identifiers.
 `.trim();
 
-    // ---------- Structured output schema (Gemini REST expects these UPPERCASE types) ----------
+    // -------- Structured output schema --------
     const RESPONSE_SCHEMA = {
       type: "OBJECT",
       properties: {
@@ -71,7 +73,6 @@ Safety rules:
         "next_step_prompt",
         "escalation"
       ],
-      // Optional: helps keep field order predictable in some SDKs/tools
       propertyOrdering: [
         "message_student",
         "feeling_label",
@@ -83,27 +84,19 @@ Safety rules:
       ]
     };
 
-    // ---------- Gemini REST call ----------
-    const model = "gemini-2.5-flash"; // fast + solid for this use case
+    // -------- Gemini REST call --------
+    const model = "gemini-2.5-flash";
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`;
 
     const payload = {
-      systemInstruction: {
-        parts: [{ text: SYSTEM_PROMPT }]
-      },
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: userText }]
-        }
-      ],
+      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      contents: [{ role: "user", parts: [{ text: userText }] }],
       generationConfig: {
-        // Enforce JSON output with your schema
-        responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA
+        // Using snake_case to satisfy REST expectations
+        response_mime_type: "application/json",
+        response_schema: RESPONSE_SCHEMA
       }
-      // Optionally: add safetySettings here if you want custom thresholds
-      // safetySettings: [ ... ]
+      // Optionally: add safetySettings here
     };
 
     const r = await fetch(endpoint, {
@@ -115,12 +108,11 @@ Safety rules:
     const data = await r.json();
 
     if (!r.ok) {
-      // Log full upstream error for debugging; surface safe message to client
       console.error("Gemini API error:", data);
       return res.status(r.status).json({ error: data?.error?.message || "Upstream error" });
     }
 
-    // With structured output on, the model's text is a JSON string matching your schema
+    // With structured output, the model returns JSON as a string in .text
     const jsonText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (typeof jsonText !== "string") {
       return res.status(502).json({ error: "Invalid upstream response shape" });
@@ -130,7 +122,6 @@ Safety rules:
     try {
       parsed = JSON.parse(jsonText);
     } catch {
-      // Fallback: wrap raw text if model ever returns plain text
       parsed = {
         message_student: jsonText,
         feeling_label: "unsure",
@@ -150,6 +141,4 @@ Safety rules:
     console.error("Server error:", err);
     return res.status(500).json({ error: "Server error" });
   }
-}
-
-
+};

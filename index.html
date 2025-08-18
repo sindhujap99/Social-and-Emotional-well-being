@@ -19,7 +19,6 @@
       margin:0;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
       color: var(--ink);
-      /* Peacock feather-ish gradient: sky→mint with a soft radial feather */
       background:
         radial-gradient(1200px 600px at 80% -10%, rgba(26,168,133,0.15), transparent 60%),
         radial-gradient(1000px 500px at -10% 20%, rgba(14,165,233,0.18), transparent 60%),
@@ -47,20 +46,14 @@
       width:10px; height:10px; border-radius:999px; background: var(--peacock-green);
       box-shadow: 0 0 8px rgba(26,168,133,0.7);
     }
-    header h1{
-      font-size: 18px; margin:0; font-weight:700;
-    }
-    header p{
-      margin:0; font-size: 13px; opacity:.8;
-    }
+    header h1{ font-size: 18px; margin:0; font-weight:700; }
+    header p{ margin:0; font-size: 13px; opacity:.8; }
 
     .main{
       display:grid; grid-template-columns: 1fr 340px; gap: 16px;
       padding: 18px;
     }
-    @media (max-width: 900px){
-      .main{ grid-template-columns: 1fr; }
-    }
+    @media (max-width: 900px){ .main{ grid-template-columns: 1fr; } }
 
     .chat{
       background: var(--card);
@@ -90,9 +83,7 @@
       font-size: 14px;
     }
 
-    .panel{
-      display:flex; flex-direction:column; gap:12px;
-    }
+    .panel{ display:flex; flex-direction:column; gap:12px; }
     .card{
       background: var(--card);
       border: 1px solid var(--border);
@@ -106,9 +97,7 @@
     }
     .accent{ border-color: rgba(26,168,133,0.3); background: rgba(26,168,133,0.06); }
 
-    .composer{
-      display:flex; gap:10px; margin-top:8px;
-    }
+    .composer{ display:flex; gap:10px; margin-top:8px; }
     textarea{
       flex:1; min-height:100px; resize: vertical;
       padding:12px 14px; font-size: 14px;
@@ -123,9 +112,7 @@
       box-shadow: 0 6px 16px rgba(14,165,233,0.25);
     }
     button:disabled{ opacity:.5; cursor:not-allowed; }
-    footer{
-      padding: 0 18px 18px; font-size:12px; opacity:.75;
-    }
+    footer{ padding: 0 18px 18px; font-size:12px; opacity:.75; }
     a{ color: #0f766e; text-decoration: none; }
   </style>
 </head>
@@ -227,7 +214,6 @@
         const data = await res.json();
         if(!res.ok) throw new Error(data.error || 'Request failed');
 
-        // Expected fields: message_student, feeling_label, skill_tag[], tip_summary, next_step_prompt, resource_suggestion?, escalation
         if(data.escalation === 'crisis-988'){ addBanner(); }
 
         addBubble(data.message_student || '…', 'bot');

@@ -1,5 +1,5 @@
 // /api/chat.js — Vercel Serverless Function (Next.js Pages API)
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).json({ error: "Method not allowed" });
@@ -151,4 +151,5 @@ Safety rules:
     return res.status(500).json({ error: "Server error" });
   }
 }
+
 

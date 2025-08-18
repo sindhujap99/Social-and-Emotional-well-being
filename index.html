@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Student Wellbeing Chatbot</title>
+  <style>
+    :root{
+      --peacock-sky: #e6f7ff;      /* light blue */
+      --peacock-mint: #eafff2;     /* soft mint/white mix */
+      --peacock-green: #1aa885;    /* teal-green accent */
+      --peacock-blue: #0ea5e9;     /* brighter blue accent */
+      --ink: #0f172a;              /* dark text */
+      --card: #ffffff;             /* white */
+      --border: #e5e7eb;
+    }
+    *{ box-sizing: border-box; }
+    body{
+      margin:0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+      color: var(--ink);
+      /* Peacock feather-ish gradient: sky→mint with a soft radial feather */
+      background:
+        radial-gradient(1200px 600px at 80% -10%, rgba(26,168,133,0.15), transparent 60%),
+        radial-gradient(1000px 500px at -10% 20%, rgba(14,165,233,0.18), transparent 60%),
+        linear-gradient(160deg, var(--peacock-sky), var(--peacock-mint) 60%, #fff);
+      min-height:100vh;
+      display:flex; align-items:center; justify-content:center;
+      padding: 32px 16px;
+    }
+    .shell{
+      width: 100%; max-width: 860px;
+      background: rgba(255,255,255,0.7);
+      backdrop-filter: blur(6px);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.08);
+      overflow: hidden;
+    }
+    header{
+      padding: 18px 22px;
+      background: linear-gradient(90deg, rgba(14,165,233,0.2), rgba(26,168,133,0.2));
+      border-bottom: 1px solid var(--border);
+      display:flex; align-items:center; gap:10px;
+    }
+    header .dot{
+      width:10px; height:10px; border-radius:999px; background: var(--peacock-green);
+      box-shadow: 0 0 8px rgba(26,168,133,0.7);
+    }
+    header h1{
+      font-size: 18px; margin:0; font-weight:700;
+    }
+    header p{
+      margin:0; font-size: 13px; opacity:.8;
+    }
+
+    .main{
+      display:grid; grid-template-columns: 1fr 340px; gap: 16px;
+      padding: 18px;
+    }
+    @media (max-width: 900px){
+      .main{ grid-template-columns: 1fr; }
+    }
+
+    .chat{
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      min-height: 320px;
+      display:flex; flex-direction:column;
+      gap:12px;
+    }
+    .bubble{
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px 14px;
+      max-width: 88%;
+      line-height: 1.4;
+      white-space: pre-wrap;
+    }
+    .me{ align-self: flex-end; background: #f7fbff; }
+    .bot{ align-self: flex-start; background: #fafffd; }
+    .banner{
+      border: 2px solid #ef4444;
+      background: #fff5f5;
+      color: #991b1b;
+      border-radius: 12px;
+      padding: 12px;
+      font-size: 14px;
+    }
+
+    .panel{
+      display:flex; flex-direction:column; gap:12px;
+    }
+    .card{
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px;
+    }
+    .badges{ display:flex; flex-wrap:wrap; gap:8px; }
+    .badge{
+      border:1px solid var(--border); border-radius: 999px;
+      padding: 4px 10px; font-size: 12px; background:#fff;
+    }
+    .accent{ border-color: rgba(26,168,133,0.3); background: rgba(26,168,133,0.06); }
+
+    .composer{
+      display:flex; gap:10px; margin-top:8px;
+    }
+    textarea{
+      flex:1; min-height:100px; resize: vertical;
+      padding:12px 14px; font-size: 14px;
+      border:1px solid var(--border); border-radius: 12px; outline: none;
+      background:#ffffff;
+    }
+    button{
+      padding: 12px 16px; font-weight:600;
+      border-radius: 12px; border: 0;
+      background: linear-gradient(135deg, var(--peacock-green), var(--peacock-blue));
+      color:white; cursor:pointer;
+      box-shadow: 0 6px 16px rgba(14,165,233,0.25);
+    }
+    button:disabled{ opacity:.5; cursor:not-allowed; }
+    footer{
+      padding: 0 18px 18px; font-size:12px; opacity:.75;
+    }
+    a{ color: #0f766e; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div class="dot"></div>
+      <div>
+        <h1>Student Wellbeing Chatbot</h1>
+        <p>Friendly guidance • Empathy • Gentle nudge to trusted adults</p>
+      </div>
+    </header>
+
+    <div class="main">
+      <!-- CHAT AREA -->
+      <section class="chat" id="chat">
+        <div class="bubble bot">
+          Hi! I’m here to listen and help you plan next steps. I’m not a crisis line, but I can suggest ways to get support. What’s on your mind?
+        </div>
+      </section>
+
+      <!-- SIDE PANEL -->
+      <aside class="panel">
+        <div class="card" id="labelsCard" style="display:none">
+          <strong>Labels</strong>
+          <div class="badges" id="labels"></div>
+        </div>
+
+        <div class="card" id="tipsCard" style="display:none">
+          <strong>Tip summary</strong>
+          <p id="tipSummary" style="margin:6px 0 10px"></p>
+          <strong>Next step</strong>
+          <p id="nextStep" style="margin:6px 0 0"></p>
+          <p id="resource" style="margin:8px 0 0; font-size:13px; opacity:.9"></p>
+        </div>
+
+        <div class="card">
+          <strong>Note</strong>
+          <p style="font-size:13px; margin-top:6px">
+            If you or someone you know is in immediate danger, in the U.S. you can call or text <b>988</b> for the Suicide & Crisis Lifeline, or talk to a trusted adult or school counselor.
+          </p>
+        </div>
+      </aside>
+    </div>
+
+    <!-- COMPOSER -->
+    <div class="composer" style="padding: 0 18px 10px">
+      <textarea id="input" placeholder="Type like a student... e.g., 'I failed my math test and I'm scared to tell my parents.'"></textarea>
+      <button id="sendBtn">Send</button>
+    </div>
+
+    <footer>
+      <span>Background palette inspired by peacock feathers (light blue • mint • green • white).</span>
+    </footer>
+  </div>
+
+  <script>
+    const chat = document.getElementById('chat');
+    const input = document.getElementById('input');
+    const sendBtn = document.getElementById('sendBtn');
+
+    const labelsCard = document.getElementById('labelsCard');
+    const labels = document.getElementById('labels');
+    const tipsCard = document.getElementById('tipsCard');
+    const tipSummary = document.getElementById('tipSummary');
+    const nextStep = document.getElementById('nextStep');
+    const resource = document.getElementById('resource');
+
+    function addBubble(text, who){
+      const div = document.createElement('div');
+      div.className = 'bubble ' + (who === 'me' ? 'me' : 'bot');
+      div.textContent = text;
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    function addBanner(){
+      const div = document.createElement('div');
+      div.className = 'banner';
+      div.innerHTML = '<b>Immediate help:</b> In the U.S., call or text <b>988</b>. Consider telling a trusted adult or school counselor.';
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    async function send(){
+      const text = input.value.trim();
+      if(!text) return;
+      addBubble(text, 'me');
+      input.value = '';
+      sendBtn.disabled = true;
+
+      try{
+        const res = await fetch('/api/reply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text })
+        });
+
+        const data = await res.json();
+        if(!res.ok) throw new Error(data.error || 'Request failed');
+
+        // Expected fields: message_student, feeling_label, skill_tag[], tip_summary, next_step_prompt, resource_suggestion?, escalation
+        if(data.escalation === 'crisis-988'){ addBanner(); }
+
+        addBubble(data.message_student || '…', 'bot');
+
+        // Labels
+        labels.innerHTML = '';
+        if(data.feeling_label){
+          const chip = document.createElement('span');
+          chip.className = 'badge accent';
+          chip.textContent = 'Feeling: ' + data.feeling_label;
+          labels.appendChild(chip);
+        }
+        if(Array.isArray(data.skill_tag)){
+          data.skill_tag.forEach(s=>{
+            const chip = document.createElement('span');
+            chip.className = 'badge';
+            chip.textContent = s;
+            labels.appendChild(chip);
+          });
+        }
+        labelsCard.style.display = (labels.children.length>0) ? 'block' : 'none';
+
+        // Tips
+        tipSummary.textContent = data.tip_summary || '';
+        nextStep.textContent = data.next_step_prompt || '';
+        resource.textContent = data.resource_suggestion ? ('Resource: ' + data.resource_suggestion) : '';
+        tipsCard.style.display = (data.tip_summary || data.next_step_prompt || data.resource_suggestion) ? 'block' : 'none';
+
+      }catch(err){
+        addBubble('Sorry—something went wrong. Please try again.', 'bot');
+        console.error(err);
+      }finally{
+        sendBtn.disabled = false;
+        input.focus();
+      }
+    }
+
+    sendBtn.addEventListener('click', send);
+    input.addEventListener('keydown', (e)=>{ if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); }});
+  </script>
+</body>
+</html>

@@ -97,7 +97,7 @@
     }
     .accent{ border-color: rgba(26,168,133,0.3); background: rgba(26,168,133,0.06); }
 
-    .composer{ display:flex; gap:10px; margin-top:8px; }
+    .composer{ display:flex; gap:10px; margin-top:8px; flex-wrap:wrap; }
     textarea{
       flex:1; min-height:100px; resize: vertical;
       padding:12px 14px; font-size: 14px;
@@ -110,6 +110,12 @@
       background: linear-gradient(135deg, var(--peacock-green), var(--peacock-blue));
       color:white; cursor:pointer;
       box-shadow: 0 6px 16px rgba(14,165,233,0.25);
+    }
+    button.ghost{
+      background: #ffffff;
+      color: #0f766e;
+      border:1px solid var(--border);
+      box-shadow:none;
     }
     button:disabled{ opacity:.5; cursor:not-allowed; }
     footer{ padding: 0 18px 18px; font-size:12px; opacity:.75; }
@@ -162,6 +168,8 @@
     <div class="composer" style="padding: 0 18px 10px">
       <textarea id="input" placeholder="Type like a student... e.g., 'I failed my math test and I'm scared to tell my parents.'"></textarea>
       <button id="sendBtn">Send</button>
+      <button id="exportJsonBtn" class="ghost">Export JSON</button>
+      <button id="exportCsvBtn" class="ghost">Export CSV</button>
     </div>
 
     <footer>
@@ -170,6 +178,27 @@
   </div>
 
   <script>
+    // ===== In-browser transcript store =====
+    const transcript = []; // [{role, ts, ...fields}]
+
+    function recordUser(text){
+      transcript.push({ role: 'user', ts: new Date().toISOString(), text });
+    }
+    function recordAssistant(payload){
+      transcript.push({
+        role: 'assistant',
+        ts: new Date().toISOString(),
+        message_student: payload.message_student,
+        feeling_label: payload.feeling_label,
+        skill_tag: payload.skill_tag,
+        tip_summary: payload.tip_summary,
+        next_step_prompt: payload.next_step_prompt,
+        resource_suggestion: payload.resource_suggestion || "",
+        escalation: payload.escalation
+      });
+    }
+
+    // ===== UI refs =====
     const chat = document.getElementById('chat');
     const input = document.getElementById('input');
     const sendBtn = document.getElementById('sendBtn');
@@ -201,6 +230,7 @@
       const text = input.value.trim();
       if(!text) return;
       addBubble(text, 'me');
+      recordUser(text); // log user message
       input.value = '';
       sendBtn.disabled = true;
 
@@ -217,6 +247,7 @@
         if(data.escalation === 'crisis-988'){ addBanner(); }
 
         addBubble(data.message_student || '…', 'bot');
+        recordAssistant(data); // log assistant reply
 
         // Labels
         labels.innerHTML = '';
@@ -253,6 +284,39 @@
 
     sendBtn.addEventListener('click', send);
     input.addEventListener('keydown', (e)=>{ if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); }});
+
+    // ===== Export helpers =====
+    function download(filename, content, mime="application/octet-stream"){
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([content], {type:mime}));
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    document.getElementById('exportJsonBtn').onclick = () => {
+      download(`chat_${Date.now()}.json`, JSON.stringify(transcript, null, 2), "application/json");
+    };
+
+    document.getElementById('exportCsvBtn').onclick = () => {
+      const esc = v => `"${(v ?? '').toString().replace(/"/g,'""')}"`;
+      const rows = transcript.map(r => {
+        if (r.role === 'user') {
+          return ['user', r.ts, r.text, '', '', '', '', '', ''].map(esc).join(',');
+        }
+        return [
+          'assistant', r.ts, '',
+          r.message_student || '',
+          r.feeling_label || '',
+          Array.isArray(r.skill_tag) ? r.skill_tag.join('|') : '',
+          r.tip_summary || '',
+          r.next_step_prompt || '',
+          r.escalation || ''
+        ].map(esc).join(',');
+      });
+      const header = 'role,timestamp,user_text,message_student,feeling_label,skill_tag,tip_summary,next_step_prompt,escalation';
+      download(`chat_${Date.now()}.csv`, [header, ...rows].join('\n'), "text/csv");
+    };
   </script>
 </body>
 </html>

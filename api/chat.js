@@ -4,32 +4,44 @@
 const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
 
+/* ---------------------- System Prompt (updated) ---------------------- */
 const SYSTEM_PROMPT = `
-You are a supportive school wellbeing guide for students ages 11–18. Many students hesitate to talk to parents, teachers, or counselors, so your role is to gently build trust, normalize their feelings, and suggest safe, constructive ways to reach out for support.
+You are a supportive wellbeing guide for students ages 11–18.
+Your main role: listen kindly, make them feel understood, and gently suggest safe ways to cope or get help.
+Many students feel nervous about talking to parents, teachers, or counselors — build trust first.
 
-Your style:
-Warm, kind, non-judgmental, and encouraging.
-Short (3–6 sentences), clear, and practical (around grade 6–8 reading level).
-Empathetic first, then suggest 1–2 specific tips, then encourage a small next step.
-Use phrases like “If I were in your shoes, I might try…” or “One way you could start the conversation is…” to make it easier for students to imagine speaking up.
-Always leave the choice with the student; never pressure.
+STYLE
+- Warm, kind, encouraging.
+- Short and clear (3–6 sentences, around grade 6–8 reading level).
+- First: show empathy.
+- Then: give 1–2 simple, practical tips they can try.
+- Finally: suggest one small step toward talking to a trusted adult.
+- Use phrases like “If I were in your shoes, I might try…” or “One way you could start is…”.
+- Always leave the choice with the student; never pressure.
 
-Always do:
-Connect: Acknowledge and validate the feeling.
-Support: Suggest 1–2 coping strategies or skills they can try right away.
-Encourage outreach: Nudge gently toward talking to a trusted adult (parent, teacher, counselor, coach, etc.) and offer a sample script they could use.
-Next step: End with one encouraging, concrete action they can take.
+STRUCTURE
+1) Connect → Acknowledge and validate their feeling.
+2) Support → Offer 1–2 coping skills they can try now.
+3) Encourage outreach → Gently nudge to talk with a trusted adult (parent, teacher, counselor, coach, etc.) and include a short sample script.
+4) Next step → End with one positive, concrete action.
 
-Safety rules:
-If you detect self-harm, thoughts of suicide, harm to others, or abuse:
-- Show empathy.
-- Clearly state you’re not a crisis line or professional.
-- Provide immediate crisis resource information (e.g., in the U.S., call or text 988).
-- Encourage telling a trusted adult.
-- Never provide instructions for dangerous activities.
-- Avoid collecting names, locations, or personal identifiers.
+SAFETY
+- If self-harm, suicidal thoughts, harm to others, or abuse:
+  • Show empathy first.
+  • State you are not a crisis line or professional.
+  • Share immediate crisis info (in the U.S., call or text 988).
+  • Encourage telling a trusted adult right away.
+- Never give dangerous instructions.
+- Never ask for personal identifiers (names, locations, etc.).
+
+IMPORTANT OUTPUT RULES
+- Respond ONLY with a valid JSON object that matches the provided schema.
+- Do NOT include any extra text, comments, apologies, or code fences.
+- Do NOT repeat keys or add unspecified fields.
+- The JSON must be directly parseable by JavaScript JSON.parse.
 `.trim();
 
+/* ---------------------- Response Schema ---------------------- */
 const RESPONSE_SCHEMA = {
   type: "OBJECT",
   properties: {
@@ -69,7 +81,7 @@ const RESPONSE_SCHEMA = {
   ]
 };
 
-// ---- Helpers ----
+/* ---------------------- Helpers ---------------------- */
 function send(res, status, json) {
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Cache-Control", "no-store");
@@ -79,32 +91,30 @@ function send(res, status, json) {
 function coerceJsonFromModel(text) {
   if (typeof text !== "string") return null;
 
-  // strip ```json fences if present
+  // Strip ```json fences if present
   let s = text.trim()
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/```$/i, "")
     .trim();
 
-  // replace smart quotes
+  // Replace smart quotes
   s = s
     .replace(/[\u201C\u201D\u2033]/g, '"')
     .replace(/[\u2018\u2019\u2032]/g, "'");
 
-  // try parse directly
+  // Try parse directly
   try { return JSON.parse(s); } catch {}
 
-  // extract first outermost { ... } block
-  const start = s.indexOf("{");
-  const end = s.lastIndexOf("}");
-  if (start !== -1 && end !== -1 && end > start) {
-    const maybe = s.slice(start, end + 1);
-    try { return JSON.parse(maybe); } catch {}
+  // Extract the first outermost { ... } block (regex rescue)
+  const match = s.match(/\{[\s\S]*\}/);
+  if (match) {
+    try { return JSON.parse(match[0]); } catch {}
   }
 
   return null;
 }
 
-// ---- Handler ----
+/* ---------------------- Handler ---------------------- */
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -116,6 +126,7 @@ export default async function handler(req, res) {
       return send(res, 500, { error: "Missing GEMINI_API_KEY on server" });
     }
 
+    // Accept either { text } or { userMessage }
     const body = req.body || {};
     const raw =
       (typeof body.text === "string" ? body.text : "") ||
@@ -146,7 +157,7 @@ export default async function handler(req, res) {
       }
     };
 
-    // Abort if upstream too slow
+    // Timeout protection
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
 
@@ -178,7 +189,7 @@ export default async function handler(req, res) {
       clearTimeout(timeout);
     }
 
-    // Safety block → send a safe, simple object (not a blob of text)
+    // Handle safety blocks gracefully
     if (data?.promptFeedback?.blockReason) {
       return send(res, 200, {
         message_student:
@@ -193,17 +204,20 @@ export default async function handler(req, res) {
       });
     }
 
-    // Structured output as JSON-in-text
+    // With structured output, the model returns JSON as a string in .text
     const jsonText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (typeof jsonText !== "string") {
       return send(res, 502, { error: "Invalid upstream response shape" });
     }
 
-    const parsed =
-      coerceJsonFromModel(jsonText) ?? {
-        // Hard fallback — keeps UI usable
+    // Try to coerce/parse; if it fails, use a gentle fallback
+    let parsed = coerceJsonFromModel(jsonText);
+
+    if (!parsed) {
+      // Last-resort fallback keeps UI usable without showing raw blobs
+      parsed = {
         message_student:
-          "I’m here to help. Could you try that again in different words?",
+          "I want to help, but I couldn’t process that. Could you say it a different way?",
         feeling_label: "unsure",
         skill_tag: [],
         tip_summary: "",
@@ -211,6 +225,7 @@ export default async function handler(req, res) {
         resource_suggestion: "",
         escalation: "none"
       };
+    }
 
     parsed.crisisFlag = parsed.escalation === "crisis-988";
     return send(res, 200, parsed);

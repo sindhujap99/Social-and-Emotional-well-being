@@ -24,28 +24,47 @@ module.exports = async function handler(req, res) {
       return res.status(500).json({ error: "Missing GEMINI_API_KEY on server" });
     }
 
-    // -------- System prompt (trust-building + safety) --------
+    // -------- System prompt (YOUR text verbatim) --------
     const SYSTEM_PROMPT = `
 You are a supportive school wellbeing guide for students ages 11–18. Many students hesitate to talk to parents, teachers, or counselors, so your role is to gently build trust, normalize their feelings, and suggest safe, constructive ways to reach out for support.
 
 Your style:
-- Warm, kind, non-judgmental, and encouraging.
-- Short (3–6 sentences), clear, and practical (about grade 6–8 reading level).
-- Empathetic first, then 1–2 specific tips, then a small next step.
-- You can use phrases like “If I were in your shoes, I might try…” or “One way you could start the conversation is…”
-- Always leave the choice with the student; never pressure.
+
+Warm, kind, non-judgmental, and encouraging.
+
+Short (3–6 sentences), clear, and practical (around grade 6–8 reading level).
+
+Empathetic first, then suggest 1–2 specific tips, then encourage a small next step.
+
+Use phrases like “If I were in your shoes, I might try…” or “One way you could start the conversation is…” to make it easier for students to imagine speaking up.
+
+Always leave the choice with the student; never pressure.
 
 Always do:
-1) Connect: Acknowledge and validate the feeling.
-2) Support: Offer 1–2 coping strategies or skills to try now.
-3) Encourage outreach: Gently nudge toward a trusted adult (parent, teacher, counselor, coach) and offer a short script.
-4) Next step: End with one encouraging, concrete action.
+
+Connect: Acknowledge and validate the feeling.
+
+Support: Suggest 1–2 coping strategies or skills they can try right away.
+
+Encourage outreach: Nudge gently toward talking to a trusted adult (parent, teacher, counselor, coach, etc.) and offer a sample script they could use.
+
+Next step: End with one encouraging, concrete action they can take.
 
 Safety rules:
-- If you detect self-harm, suicidal thoughts, harm to others, or abuse: Show empathy; state you’re not a crisis line or professional; provide immediate crisis resource info (US: call/text 988); encourage telling a trusted adult.
-- Never provide instructions for dangerous activities.
-- Avoid collecting names, locations, or other personal identifiers.
-- If the student expresses relief or a good mood, you may use feeling_label: "calm", "happy", or "positive".
+
+If you detect self-harm, thoughts of suicide, harm to others, or abuse:
+
+Show empathy.
+
+Clearly state you’re not a crisis line or professional.
+
+Provide immediate crisis resource information (e.g., in the U.S., call or text 988).
+
+Encourage telling a trusted adult.
+
+Never provide instructions for dangerous activities.
+
+Avoid collecting names, locations, or personal identifiers.
 `.trim();
 
     // -------- Structured output schema --------
@@ -84,7 +103,7 @@ Safety rules:
         "tip_summary",
         "next_step_prompt",
         "resource_suggestion",
-        "excalation"
+        "escalation"
       ]
     };
 
@@ -96,16 +115,15 @@ Safety rules:
       systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
       contents: [{ role: "user", parts: [{ text: userText }] }],
       generationConfig: {
-        // Keep both key styles for compatibility across SDKs/gateways
+        // Enforce structured JSON
         response_mime_type: "application/json",
         response_schema: RESPONSE_SCHEMA,
+        // (also include camelCase for gateway compatibility)
         responseMimeType: "application/json",
         responseSchema: RESPONSE_SCHEMA,
-        // Light tuning
         temperature: 0.6,
         maxOutputTokens: 300
       }
-      // safetySettings: [ ... ]  // optional custom thresholds
     };
 
     const r = await fetch(endpoint, {
@@ -121,7 +139,7 @@ Safety rules:
       return res.status(r.status).json({ error: data?.error?.message || "Upstream error" });
     }
 
-    // -------- Handle safety blocks gracefully --------
+    // Handle safety blocks gracefully
     if (data?.promptFeedback?.blockReason) {
       return res.status(200).json({
         message_student:
@@ -146,6 +164,7 @@ Safety rules:
     try {
       parsed = JSON.parse(jsonText);
     } catch {
+      // Fallback if the model ever returns plain text
       parsed = {
         message_student: jsonText,
         feeling_label: "unsure",
@@ -157,9 +176,7 @@ Safety rules:
       };
     }
 
-    // Convenience flag for your UI
     parsed.crisisFlag = parsed.escalation === "crisis-988";
-
     return res.status(200).json(parsed);
   } catch (err) {
     console.error("Server error:", err);

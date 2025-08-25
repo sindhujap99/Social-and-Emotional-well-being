@@ -45,6 +45,7 @@ Safety rules:
 - If you detect self-harm, suicidal thoughts, harm to others, or abuse: Show empathy; state you’re not a crisis line or professional; provide immediate crisis resource info (US: call/text 988); encourage telling a trusted adult.
 - Never provide instructions for dangerous activities.
 - Avoid collecting names, locations, or other personal identifiers.
+- If the student expresses relief or a good mood, you may use feeling_label: "calm", "happy", or "positive".
 `.trim();
 
     // -------- Structured output schema --------
@@ -54,7 +55,10 @@ Safety rules:
         message_student: { type: "STRING" },
         feeling_label: {
           type: "STRING",
-          enum: ["anxious", "sad", "mad", "stressed", "lonely", "mixed", "unsure"]
+          enum: [
+            "anxious", "sad", "mad", "stressed", "lonely", "mixed", "unsure",
+            "calm", "happy", "positive"
+          ]
         },
         skill_tag: { type: "ARRAY", items: { type: "STRING" } },
         tip_summary: { type: "STRING" },
@@ -92,11 +96,13 @@ Safety rules:
       systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
       contents: [{ role: "user", parts: [{ text: userText }] }],
       generationConfig: {
-        // Using snake_case to satisfy REST expectations
+        // Use both key styles for compatibility
         response_mime_type: "application/json",
-        response_schema: RESPONSE_SCHEMA
+        response_schema: RESPONSE_SCHEMA,
+        responseMimeType: "application/json",
+        responseSchema: RESPONSE_SCHEMA
       }
-      // Optionally: add safetySettings here
+      // safetySettings: [ ... ]  // optional custom thresholds
     };
 
     const r = await fetch(endpoint, {

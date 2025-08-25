@@ -6,12 +6,12 @@
   <title>Student Wellbeing Chatbot</title>
   <style>
     :root{
-      --peacock-sky: #e6f7ff;      /* light blue */
-      --peacock-mint: #eafff2;     /* soft mint/white mix */
-      --peacock-green: #1aa885;    /* teal-green accent */
-      --peacock-blue: #0ea5e9;     /* brighter blue accent */
-      --ink: #0f172a;              /* dark text */
-      --card: #ffffff;             /* white */
+      --peacock-sky: #e6f7ff;
+      --peacock-mint: #eafff2;
+      --peacock-green: #1aa885;
+      --peacock-blue: #0ea5e9;
+      --ink: #0f172a;
+      --card: #ffffff;
       --border: #e5e7eb;
     }
     *{ box-sizing: border-box; }
@@ -19,7 +19,6 @@
       margin:0;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
       color: var(--ink);
-      /* Peacock feather-ish gradient: sky→mint with a soft radial feather */
       background:
         radial-gradient(1200px 600px at 80% -10%, rgba(26,168,133,0.15), transparent 60%),
         radial-gradient(1000px 500px at -10% 20%, rgba(14,165,233,0.18), transparent 60%),
@@ -47,20 +46,14 @@
       width:10px; height:10px; border-radius:999px; background: var(--peacock-green);
       box-shadow: 0 0 8px rgba(26,168,133,0.7);
     }
-    header h1{
-      font-size: 18px; margin:0; font-weight:700;
-    }
-    header p{
-      margin:0; font-size: 13px; opacity:.8;
-    }
+    header h1{ font-size: 18px; margin:0; font-weight:700; }
+    header p{ margin:0; font-size: 13px; opacity:.8; }
 
     .main{
       display:grid; grid-template-columns: 1fr 340px; gap: 16px;
       padding: 18px;
     }
-    @media (max-width: 900px){
-      .main{ grid-template-columns: 1fr; }
-    }
+    @media (max-width: 900px){ .main{ grid-template-columns: 1fr; } }
 
     .chat{
       background: var(--card);
@@ -90,9 +83,7 @@
       font-size: 14px;
     }
 
-    .panel{
-      display:flex; flex-direction:column; gap:12px;
-    }
+    .panel{ display:flex; flex-direction:column; gap:12px; }
     .card{
       background: var(--card);
       border: 1px solid var(--border);
@@ -106,9 +97,11 @@
     }
     .accent{ border-color: rgba(26,168,133,0.3); background: rgba(26,168,133,0.06); }
 
-    .composer{
-      display:flex; gap:10px; margin-top:8px;
-    }
+    /* image styles */
+    .imgwrap img{ width: 100%; border-radius: 12px; display:block; }
+    .caption{ font-size:12px; opacity:.7; margin-top:6px; }
+
+    .composer{ display:flex; gap:10px; margin-top:8px; flex-wrap:wrap; }
     textarea{
       flex:1; min-height:100px; resize: vertical;
       padding:12px 14px; font-size: 14px;
@@ -122,10 +115,14 @@
       color:white; cursor:pointer;
       box-shadow: 0 6px 16px rgba(14,165,233,0.25);
     }
-    button:disabled{ opacity:.5; cursor:not-allowed; }
-    footer{
-      padding: 0 18px 18px; font-size:12px; opacity:.75;
+    button.ghost{
+      background: #ffffff;
+      color: #0f766e;
+      border:1px solid var(--border);
+      box-shadow:none;
     }
+    button:disabled{ opacity:.5; cursor:not-allowed; }
+    footer{ padding: 0 18px 18px; font-size:12px; opacity:.75; }
     a{ color: #0f766e; text-decoration: none; }
   </style>
 </head>
@@ -154,6 +151,14 @@
           <div class="badges" id="labels"></div>
         </div>
 
+        <!-- Image card -->
+        <div class="card" id="imageCard" style="display:none">
+          <div class="imgwrap">
+            <img id="feelingArt" alt="feeling illustration" loading="lazy" />
+          </div>
+          <div class="caption" id="imageCaption"></div>
+        </div>
+
         <div class="card" id="tipsCard" style="display:none">
           <strong>Tip summary</strong>
           <p id="tipSummary" style="margin:6px 0 10px"></p>
@@ -165,7 +170,7 @@
         <div class="card">
           <strong>Note</strong>
           <p style="font-size:13px; margin-top:6px">
-            If you or someone you know is in immediate danger, in the U.S. you can call or text <b>988</b> for the Suicide & Crisis Lifeline, or talk to a trusted adult or school counselor.
+            If you or someone you know is in immediate danger, in the U.S. you can call or text <b>988</b>.
           </p>
         </div>
       </aside>
@@ -175,6 +180,8 @@
     <div class="composer" style="padding: 0 18px 10px">
       <textarea id="input" placeholder="Type like a student... e.g., 'I failed my math test and I'm scared to tell my parents.'"></textarea>
       <button id="sendBtn">Send</button>
+      <button id="exportJsonBtn" class="ghost">Export JSON</button>
+      <button id="exportCsvBtn" class="ghost">Export CSV</button>
     </div>
 
     <footer>
@@ -183,12 +190,34 @@
   </div>
 
   <script>
+    // ===== In-browser transcript store =====
+    const transcript = [];
+    function recordUser(text){
+      transcript.push({ role: 'user', ts: new Date().toISOString(), text });
+    }
+    function recordAssistant(payload){
+      transcript.push({
+        role: 'assistant',
+        ts: new Date().toISOString(),
+        message_student: payload.message_student,
+        feeling_label: payload.feeling_label,
+        skill_tag: payload.skill_tag,
+        tip_summary: payload.tip_summary,
+        next_step_prompt: payload.next_step_prompt,
+        resource_suggestion: payload.resource_suggestion || "",
+        escalation: payload.escalation
+      });
+    }
+
+    // ===== UI refs =====
     const chat = document.getElementById('chat');
     const input = document.getElementById('input');
     const sendBtn = document.getElementById('sendBtn');
-
     const labelsCard = document.getElementById('labelsCard');
     const labels = document.getElementById('labels');
+    const imageCard = document.getElementById('imageCard');
+    const feelingArt = document.getElementById('feelingArt');
+    const imageCaption = document.getElementById('imageCaption');
     const tipsCard = document.getElementById('tipsCard');
     const tipSummary = document.getElementById('tipSummary');
     const nextStep = document.getElementById('nextStep');
@@ -210,27 +239,49 @@
       chat.scrollTop = chat.scrollHeight;
     }
 
+    // Load image by label: try .png → .jpg → default
+    function setFeelingImage(label){
+      const base = (label || 'default').toLowerCase();
+      const candidates = [
+        `/images/${base}.png`,
+        `/images/${base}.jpg`,
+        `/images/default.png`,
+        `/images/default.jpg`,
+      ];
+      let i = 0;
+      feelingArt.onload = () => { imageCard.style.display = 'block'; };
+      feelingArt.onerror = () => {
+        i++;
+        if (i < candidates.length) feelingArt.src = candidates[i];
+        else imageCard.style.display = 'none';
+      };
+      feelingArt.alt = (base ? base + ' ' : '') + 'illustration';
+      imageCaption.textContent = (base ? base[0].toUpperCase()+base.slice(1) : 'Feeling') + " — you're not alone.";
+      feelingArt.src = candidates[0];
+    }
+
     async function send(){
       const text = input.value.trim();
       if(!text) return;
+
       addBubble(text, 'me');
+      recordUser(text);
       input.value = '';
       sendBtn.disabled = true;
 
       try{
-        const res = await fetch('/api/reply', {
+        const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text })
         });
-
         const data = await res.json();
         if(!res.ok) throw new Error(data.error || 'Request failed');
 
-        // Expected fields: message_student, feeling_label, skill_tag[], tip_summary, next_step_prompt, resource_suggestion?, escalation
         if(data.escalation === 'crisis-988'){ addBanner(); }
 
         addBubble(data.message_student || '…', 'bot');
+        recordAssistant(data);
 
         // Labels
         labels.innerHTML = '';
@@ -250,6 +301,9 @@
         }
         labelsCard.style.display = (labels.children.length>0) ? 'block' : 'none';
 
+        // Image
+        setFeelingImage(data.feeling_label);
+
         // Tips
         tipSummary.textContent = data.tip_summary || '';
         nextStep.textContent = data.next_step_prompt || '';
@@ -267,6 +321,35 @@
 
     sendBtn.addEventListener('click', send);
     input.addEventListener('keydown', (e)=>{ if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); }});
+
+    // ===== Export buttons =====
+    function download(filename, content, mime="application/octet-stream"){
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([content], {type:mime}));
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+    document.getElementById('exportJsonBtn').onclick = () => {
+      download(`chat_${Date.now()}.json`, JSON.stringify(transcript, null, 2), "application/json");
+    };
+    document.getElementById('exportCsvBtn').onclick = () => {
+      const esc = v => `"${(v ?? '').toString().replace(/"/g,'""')}"`;
+      const rows = transcript.map(r => {
+        if (r.role === 'user') return ['user', r.ts, r.text, '', '', '', '', '', ''].map(esc).join(',');
+        return [
+          'assistant', r.ts, '',
+          r.message_student || '',
+          r.feeling_label || '',
+          Array.isArray(r.skill_tag) ? r.skill_tag.join('|') : '',
+          r.tip_summary || '',
+          r.next_step_prompt || '',
+          r.escalation || ''
+        ].map(esc).join(',');
+      });
+      const header = 'role,timestamp,user_text,message_student,feeling_label,skill_tag,tip_summary,next_step_prompt,escalation';
+      download(`chat_${Date.now()}.csv`, [header, ...rows].join('\n'), "text/csv");
+    };
   </script>
 </body>
 </html>

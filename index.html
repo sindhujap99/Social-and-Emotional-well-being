@@ -97,8 +97,23 @@
     }
     .accent{ border-color: rgba(26,168,133,0.3); background: rgba(26,168,133,0.06); }
 
-    /* image styles */
-    .imgwrap img{ width: 100%; border-radius: 12px; display:block; }
+    /* --- Pop-in image effect + steady layout --- */
+    .imgwrap{ aspect-ratio:16/10; overflow:hidden; }
+    #feelingArt{
+      width:100%; height:100%; object-fit:cover;
+      opacity:0; transform:scale(.98);
+      transition: opacity .35s ease, transform .35s ease, box-shadow .35s ease;
+      border-radius:12px;
+      display:block;
+    }
+    #feelingArt.show{ opacity:1; transform:scale(1); box-shadow:0 10px 26px rgba(14,165,233,.18); }
+    @keyframes popin { from{ transform:scale(.94) } to{ transform:scale(1) } }
+    #feelingArt.pop { animation: popin .35s ease; }
+    @media (prefers-reduced-motion: reduce){
+      #feelingArt{ transition:opacity .2s linear; }
+      #feelingArt.pop{ animation:none; }
+    }
+
     .caption{ font-size:12px; opacity:.7; margin-top:6px; }
 
     .composer{ display:flex; gap:10px; margin-top:8px; flex-wrap:wrap; }
@@ -138,7 +153,7 @@
 
     <div class="main">
       <!-- CHAT AREA -->
-      <section class="chat" id="chat">
+      <section class="chat" id="chat" aria-live="polite" aria-atomic="false">
         <div class="bubble bot">
           Hi! I’m here to listen and help you plan next steps. I’m not a crisis line, but I can suggest ways to get support. What’s on your mind?
         </div>
@@ -154,7 +169,7 @@
         <!-- Image card -->
         <div class="card" id="imageCard" style="display:none">
           <div class="imgwrap">
-            <img id="feelingArt" alt="feeling illustration" loading="lazy" />
+            <img id="feelingArt" alt="feeling illustration" loading="lazy" decoding="async" />
           </div>
           <div class="caption" id="imageCaption"></div>
         </div>
@@ -239,24 +254,41 @@
       chat.scrollTop = chat.scrollHeight;
     }
 
-    // Load image by label: try .png → .jpg → default
+    // Load image by label: try webp → png → jpg → default; fade + pop on load
     function setFeelingImage(label){
       const base = (label || 'default').toLowerCase();
       const candidates = [
+        `/images/${base}.webp`,
         `/images/${base}.png`,
         `/images/${base}.jpg`,
+        `/images/default.webp`,
         `/images/default.png`,
         `/images/default.jpg`,
       ];
       let i = 0;
-      feelingArt.onload = () => { imageCard.style.display = 'block'; };
+
+      imageCard.style.display = 'block';
+      feelingArt.classList.remove('show','pop');
+
+      feelingArt.onload = () => {
+        // Show caption only for real labels
+        imageCaption.textContent = label ? (label[0].toUpperCase()+label.slice(1)) + " — you're not alone." : "";
+        feelingArt.classList.add('show','pop');
+        feelingArt.addEventListener('animationend', () => {
+          feelingArt.classList.remove('pop');
+        }, { once:true });
+      };
       feelingArt.onerror = () => {
         i++;
-        if (i < candidates.length) feelingArt.src = candidates[i];
-        else imageCard.style.display = 'none';
+        if (i < candidates.length) {
+          feelingArt.src = candidates[i];
+        } else {
+          imageCard.style.display = 'none';
+          imageCaption.textContent = "";
+        }
       };
-      feelingArt.alt = (base ? base + ' ' : '') + 'illustration';
-      imageCaption.textContent = (base ? base[0].toUpperCase()+base.slice(1) : 'Feeling') + " — you're not alone.";
+
+      feelingArt.alt = (label ? label + ' ' : '') + 'illustration';
       feelingArt.src = candidates[0];
     }
 
@@ -320,7 +352,7 @@
     }
 
     sendBtn.addEventListener('click', send);
-    input.addEventListener('keydown', (e)=>{ if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); }});
+    input.addEventListener('keydown', (e)=>{ if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); }});
 
     // ===== Export buttons =====
     function download(filename, content, mime="application/octet-stream"){

@@ -6,18 +6,18 @@
   <title>Student Wellbeing Chatbot</title>
   <style>
     :root{
-      --peacock-sky: #e6f7ff;
-      --peacock-mint: #eafff2;
-      --peacock-green: #1aa885;
-      --peacock-blue: #0ea5e9;
-      --ink: #0f172a;
-      --card: #ffffff;
+      --peacock-sky: #e6f7ff;      /* light blue */
+      --peacock-mint: #eafff2;     /* soft mint */
+      --peacock-green: #1aa885;    /* teal-green accent */
+      --peacock-blue: #0ea5e9;     /* brighter blue accent */
+      --ink: #0f172a;              /* dark text */
+      --card: #ffffff;             /* white */
       --border: #e5e7eb;
     }
     *{ box-sizing: border-box; }
     body{
       margin:0;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial, "Noto Sans";
       color: var(--ink);
       background:
         radial-gradient(1200px 600px at 80% -10%, rgba(26,168,133,0.15), transparent 60%),
@@ -97,25 +97,6 @@
     }
     .accent{ border-color: rgba(26,168,133,0.3); background: rgba(26,168,133,0.06); }
 
-    /* --- Pop-in image effect + steady layout --- */
-    .imgwrap{ aspect-ratio:16/10; overflow:hidden; }
-    #feelingArt{
-      width:100%; height:100%; object-fit:cover;
-      opacity:0; transform:scale(.98);
-      transition: opacity .35s ease, transform .35s ease, box-shadow .35s ease;
-      border-radius:12px;
-      display:block;
-    }
-    #feelingArt.show{ opacity:1; transform:scale(1); box-shadow:0 10px 26px rgba(14,165,233,.18); }
-    @keyframes popin { from{ transform:scale(.94) } to{ transform:scale(1) } }
-    #feelingArt.pop { animation: popin .35s ease; }
-    @media (prefers-reduced-motion: reduce){
-      #feelingArt{ transition:opacity .2s linear; }
-      #feelingArt.pop{ animation:none; }
-    }
-
-    .caption{ font-size:12px; opacity:.7; margin-top:6px; }
-
     .composer{ display:flex; gap:10px; margin-top:8px; flex-wrap:wrap; }
     textarea{
       flex:1; min-height:100px; resize: vertical;
@@ -153,25 +134,17 @@
 
     <div class="main">
       <!-- CHAT AREA -->
-      <section class="chat" id="chat" aria-live="polite" aria-atomic="false">
+      <section class="chat" id="chat" aria-live="polite">
         <div class="bubble bot">
           Hi! I’m here to listen and help you plan next steps. I’m not a crisis line, but I can suggest ways to get support. What’s on your mind?
         </div>
       </section>
 
-      <!-- SIDE PANEL -->
+      <!-- SIDE PANEL (no images) -->
       <aside class="panel">
         <div class="card" id="labelsCard" style="display:none">
           <strong>Labels</strong>
           <div class="badges" id="labels"></div>
-        </div>
-
-        <!-- Image card -->
-        <div class="card" id="imageCard" style="display:none">
-          <div class="imgwrap">
-            <img id="feelingArt" alt="feeling illustration" loading="lazy" decoding="async" />
-          </div>
-          <div class="caption" id="imageCaption"></div>
         </div>
 
         <div class="card" id="tipsCard" style="display:none">
@@ -205,7 +178,7 @@
   </div>
 
   <script>
-    // ===== In-browser transcript store =====
+    // ===== Simple transcript store (for export) =====
     const transcript = [];
     function recordUser(text){
       transcript.push({ role: 'user', ts: new Date().toISOString(), text });
@@ -230,9 +203,6 @@
     const sendBtn = document.getElementById('sendBtn');
     const labelsCard = document.getElementById('labelsCard');
     const labels = document.getElementById('labels');
-    const imageCard = document.getElementById('imageCard');
-    const feelingArt = document.getElementById('feelingArt');
-    const imageCaption = document.getElementById('imageCaption');
     const tipsCard = document.getElementById('tipsCard');
     const tipSummary = document.getElementById('tipSummary');
     const nextStep = document.getElementById('nextStep');
@@ -252,44 +222,6 @@
       div.innerHTML = '<b>Immediate help:</b> In the U.S., call or text <b>988</b>. Consider telling a trusted adult or school counselor.';
       chat.appendChild(div);
       chat.scrollTop = chat.scrollHeight;
-    }
-
-    // Load image by label: try webp → png → jpg → default; fade + pop on load
-    function setFeelingImage(label){
-      const base = (label || 'default').toLowerCase();
-      const candidates = [
-        `/images/${base}.webp`,
-        `/images/${base}.png`,
-        `/images/${base}.jpg`,
-        `/images/default.webp`,
-        `/images/default.png`,
-        `/images/default.jpg`,
-      ];
-      let i = 0;
-
-      imageCard.style.display = 'block';
-      feelingArt.classList.remove('show','pop');
-
-      feelingArt.onload = () => {
-        // Show caption only for real labels
-        imageCaption.textContent = label ? (label[0].toUpperCase()+label.slice(1)) + " — you're not alone." : "";
-        feelingArt.classList.add('show','pop');
-        feelingArt.addEventListener('animationend', () => {
-          feelingArt.classList.remove('pop');
-        }, { once:true });
-      };
-      feelingArt.onerror = () => {
-        i++;
-        if (i < candidates.length) {
-          feelingArt.src = candidates[i];
-        } else {
-          imageCard.style.display = 'none';
-          imageCaption.textContent = "";
-        }
-      };
-
-      feelingArt.alt = (label ? label + ' ' : '') + 'illustration';
-      feelingArt.src = candidates[0];
     }
 
     async function send(){
@@ -332,9 +264,6 @@
           });
         }
         labelsCard.style.display = (labels.children.length>0) ? 'block' : 'none';
-
-        // Image
-        setFeelingImage(data.feeling_label);
 
         // Tips
         tipSummary.textContent = data.tip_summary || '';

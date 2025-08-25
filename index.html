@@ -6,12 +6,12 @@
   <title>Student Wellbeing Chatbot</title>
   <style>
     :root{
-      --peacock-sky: #e6f7ff;      /* light blue */
-      --peacock-mint: #eafff2;     /* soft mint */
-      --peacock-green: #1aa885;    /* teal-green accent */
-      --peacock-blue: #0ea5e9;     /* brighter blue accent */
-      --ink: #0f172a;              /* dark text */
-      --card: #ffffff;             /* white */
+      --peacock-sky: #e6f7ff;
+      --peacock-mint: #eafff2;
+      --peacock-green: #1aa885;
+      --peacock-blue: #0ea5e9;
+      --ink: #0f172a;
+      --card: #ffffff;
       --border: #e5e7eb;
     }
     *{ box-sizing: border-box; }
@@ -211,7 +211,7 @@
     function addBubble(text, who){
       const div = document.createElement('div');
       div.className = 'bubble ' + (who === 'me' ? 'me' : 'bot');
-      div.textContent = text;
+      div.textContent = (typeof text === 'string') ? text : '…'; // guard
       chat.appendChild(div);
       chat.scrollTop = chat.scrollHeight;
     }
@@ -244,7 +244,10 @@
 
         if(data.escalation === 'crisis-988'){ addBanner(); }
 
-        addBubble(data.message_student || '…', 'bot');
+        addBubble(
+          typeof data.message_student === 'string' ? data.message_student : '…',
+          'bot'
+        );
         recordAssistant(data);
 
         // Labels

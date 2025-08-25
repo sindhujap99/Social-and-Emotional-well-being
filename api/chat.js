@@ -84,7 +84,7 @@ Safety rules:
         "tip_summary",
         "next_step_prompt",
         "resource_suggestion",
-        "escalation"
+        "excalation"
       ]
     };
 
@@ -96,11 +96,14 @@ Safety rules:
       systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
       contents: [{ role: "user", parts: [{ text: userText }] }],
       generationConfig: {
-        // Use both key styles for compatibility
+        // Keep both key styles for compatibility across SDKs/gateways
         response_mime_type: "application/json",
         response_schema: RESPONSE_SCHEMA,
         responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA
+        responseSchema: RESPONSE_SCHEMA,
+        // Light tuning
+        temperature: 0.6,
+        maxOutputTokens: 300
       }
       // safetySettings: [ ... ]  // optional custom thresholds
     };
@@ -116,6 +119,21 @@ Safety rules:
     if (!r.ok) {
       console.error("Gemini API error:", data);
       return res.status(r.status).json({ error: data?.error?.message || "Upstream error" });
+    }
+
+    // -------- Handle safety blocks gracefully --------
+    if (data?.promptFeedback?.blockReason) {
+      return res.status(200).json({
+        message_student:
+          "I want to help, but I can’t respond to that directly. If you’re in danger or thinking about self-harm, in the U.S. you can call or text 988. You can also reach a trusted adult or school counselor.",
+        feeling_label: "unsure",
+        skill_tag: [],
+        tip_summary: "Reach out to a trusted adult; consider crisis support.",
+        next_step_prompt: "Tell a counselor, teacher, parent or guardian what’s going on.",
+        resource_suggestion: "U.S. Suicide & Crisis Lifeline: 988",
+        escalation: "crisis-988",
+        crisisFlag: true
+      });
     }
 
     // With structured output, the model returns JSON as a string in .text

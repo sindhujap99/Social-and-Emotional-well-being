@@ -1,115 +1,135 @@
-// /api/chat.js — Vercel Serverless Function (Next.js Pages API)
-module.exports = async function handler(req, res) {
-  if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+// /pages/api/chat.js — Vercel Serverless Function (Next.js Pages API)
 
-  try {
-    // Accept either { text } or { userMessage }
-    const body = req.body || {};
-    const userText =
-      (typeof body.text === "string" && body.text.trim()) ||
-      (typeof body.userMessage === "string" && body.userMessage.trim());
+// Allow overriding the model via env
+const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
 
-    if (!userText) {
-      return res.status(400).json({ error: "Missing 'text' (or 'userMessage')" });
-    }
-    if (userText.length > 2000) {
-      return res.status(413).json({ error: "Input too long" });
-    }
-
-    const API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    if (!API_KEY) {
-      return res.status(500).json({ error: "Missing GEMINI_API_KEY on server" });
-    }
-
-    // -------- System prompt (YOUR text verbatim) --------
-    const SYSTEM_PROMPT = `
+const SYSTEM_PROMPT = `
 You are a supportive school wellbeing guide for students ages 11–18. Many students hesitate to talk to parents, teachers, or counselors, so your role is to gently build trust, normalize their feelings, and suggest safe, constructive ways to reach out for support.
 
 Your style:
-
 Warm, kind, non-judgmental, and encouraging.
-
 Short (3–6 sentences), clear, and practical (around grade 6–8 reading level).
-
 Empathetic first, then suggest 1–2 specific tips, then encourage a small next step.
-
 Use phrases like “If I were in your shoes, I might try…” or “One way you could start the conversation is…” to make it easier for students to imagine speaking up.
-
 Always leave the choice with the student; never pressure.
 
 Always do:
-
 Connect: Acknowledge and validate the feeling.
-
 Support: Suggest 1–2 coping strategies or skills they can try right away.
-
 Encourage outreach: Nudge gently toward talking to a trusted adult (parent, teacher, counselor, coach, etc.) and offer a sample script they could use.
-
 Next step: End with one encouraging, concrete action they can take.
 
 Safety rules:
-
 If you detect self-harm, thoughts of suicide, harm to others, or abuse:
-
-Show empathy.
-
-Clearly state you’re not a crisis line or professional.
-
-Provide immediate crisis resource information (e.g., in the U.S., call or text 988).
-
-Encourage telling a trusted adult.
-
-Never provide instructions for dangerous activities.
-
-Avoid collecting names, locations, or personal identifiers.
+- Show empathy.
+- Clearly state you’re not a crisis line or professional.
+- Provide immediate crisis resource information (e.g., in the U.S., call or text 988).
+- Encourage telling a trusted adult.
+- Never provide instructions for dangerous activities.
+- Avoid collecting names, locations, or personal identifiers.
 `.trim();
 
-    // -------- Structured output schema --------
-    const RESPONSE_SCHEMA = {
-      type: "OBJECT",
-      properties: {
-        message_student: { type: "STRING" },
-        feeling_label: {
-          type: "STRING",
-          enum: [
-            "anxious", "sad", "mad", "stressed", "lonely", "mixed", "unsure",
-            "calm", "happy", "positive"
-          ]
-        },
-        skill_tag: { type: "ARRAY", items: { type: "STRING" } },
-        tip_summary: { type: "STRING" },
-        next_step_prompt: { type: "STRING" },
-        resource_suggestion: { type: "STRING" },
-        escalation: {
-          type: "STRING",
-          enum: ["none", "encourage-counselor", "crisis-988"]
-        }
-      },
-      required: [
-        "message_student",
-        "feeling_label",
-        "skill_tag",
-        "tip_summary",
-        "next_step_prompt",
-        "escalation"
-      ],
-      propertyOrdering: [
-        "message_student",
-        "feeling_label",
-        "skill_tag",
-        "tip_summary",
-        "next_step_prompt",
-        "resource_suggestion",
-        "escalation"
+const RESPONSE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    message_student: { type: "STRING" },
+    feeling_label: {
+      type: "STRING",
+      enum: [
+        "anxious", "sad", "mad", "stressed", "lonely", "mixed", "unsure",
+        "calm", "happy", "positive"
       ]
-    };
+    },
+    skill_tag: { type: "ARRAY", items: { type: "STRING" } },
+    tip_summary: { type: "STRING" },
+    next_step_prompt: { type: "STRING" },
+    resource_suggestion: { type: "STRING" },
+    escalation: {
+      type: "STRING",
+      enum: ["none", "encourage-counselor", "crisis-988"]
+    }
+  },
+  required: [
+    "message_student",
+    "feeling_label",
+    "skill_tag",
+    "tip_summary",
+    "next_step_prompt",
+    "escalation"
+  ],
+  propertyOrdering: [
+    "message_student",
+    "feeling_label",
+    "skill_tag",
+    "tip_summary",
+    "next_step_prompt",
+    "resource_suggestion",
+    "escalation"
+  ]
+};
 
-    // -------- Gemini REST call --------
-    const model = "gemini-2.5-flash";
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`;
+// ---- Helpers ----
+function send(res, status, json) {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  return res.status(status).json(json);
+}
+
+function coerceJsonFromModel(text) {
+  if (typeof text !== "string") return null;
+
+  // strip ```json fences if present
+  let s = text.trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
+
+  // replace smart quotes
+  s = s
+    .replace(/[\u201C\u201D\u2033]/g, '"')
+    .replace(/[\u2018\u2019\u2032]/g, "'");
+
+  // try parse directly
+  try { return JSON.parse(s); } catch {}
+
+  // extract first outermost { ... } block
+  const start = s.indexOf("{");
+  const end = s.lastIndexOf("}");
+  if (start !== -1 && end !== -1 && end > start) {
+    const maybe = s.slice(start, end + 1);
+    try { return JSON.parse(maybe); } catch {}
+  }
+
+  return null;
+}
+
+// ---- Handler ----
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "POST");
+    return send(res, 405, { error: "Method not allowed" });
+  }
+
+  try {
+    if (!API_KEY) {
+      return send(res, 500, { error: "Missing GEMINI_API_KEY on server" });
+    }
+
+    const body = req.body || {};
+    const raw =
+      (typeof body.text === "string" ? body.text : "") ||
+      (typeof body.userMessage === "string" ? body.userMessage : "");
+    const userText = (raw || "").trim().replace(/\s+/g, " ");
+
+    if (!userText) {
+      return send(res, 400, { error: "Missing 'text' (or 'userMessage')" });
+    }
+    if (userText.length > 2000) {
+      return send(res, 413, { error: "Input too long" });
+    }
+
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
 
     const payload = {
       systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
@@ -118,7 +138,7 @@ Avoid collecting names, locations, or personal identifiers.
         // Enforce structured JSON
         response_mime_type: "application/json",
         response_schema: RESPONSE_SCHEMA,
-        // (also include camelCase for gateway compatibility)
+        // camelCase mirrors (some gateways look for these)
         responseMimeType: "application/json",
         responseSchema: RESPONSE_SCHEMA,
         temperature: 0.6,
@@ -126,22 +146,41 @@ Avoid collecting names, locations, or personal identifiers.
       }
     };
 
-    const r = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
+    // Abort if upstream too slow
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
 
-    const data = await r.json();
+    let data;
+    try {
+      const r = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
 
-    if (!r.ok) {
-      console.error("Gemini API error:", data);
-      return res.status(r.status).json({ error: data?.error?.message || "Upstream error" });
+      data = await r.json();
+
+      if (!r.ok) {
+        console.error("Gemini API error", {
+          status: r.status,
+          message: data?.error?.message || "Unknown upstream error"
+        });
+        clearTimeout(timeout);
+        return send(res, r.status, { error: data?.error?.message || "Upstream error" });
+      }
+    } catch (err) {
+      clearTimeout(timeout);
+      const aborted = err?.name === "AbortError";
+      console.error("Gemini fetch failed", { aborted, err: String(err) });
+      return send(res, 504, { error: aborted ? "Upstream timeout" : "Upstream fetch failed" });
+    } finally {
+      clearTimeout(timeout);
     }
 
-    // Handle safety blocks gracefully
+    // Safety block → send a safe, simple object (not a blob of text)
     if (data?.promptFeedback?.blockReason) {
-      return res.status(200).json({
+      return send(res, 200, {
         message_student:
           "I want to help, but I can’t respond to that directly. If you’re in danger or thinking about self-harm, in the U.S. you can call or text 988. You can also reach a trusted adult or school counselor.",
         feeling_label: "unsure",
@@ -154,19 +193,17 @@ Avoid collecting names, locations, or personal identifiers.
       });
     }
 
-    // With structured output, the model returns JSON as a string in .text
+    // Structured output as JSON-in-text
     const jsonText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (typeof jsonText !== "string") {
-      return res.status(502).json({ error: "Invalid upstream response shape" });
+      return send(res, 502, { error: "Invalid upstream response shape" });
     }
 
-    let parsed;
-    try {
-      parsed = JSON.parse(jsonText);
-    } catch {
-      // Fallback if the model ever returns plain text
-      parsed = {
-        message_student: jsonText,
+    const parsed =
+      coerceJsonFromModel(jsonText) ?? {
+        // Hard fallback — keeps UI usable
+        message_student:
+          "I’m here to help. Could you try that again in different words?",
         feeling_label: "unsure",
         skill_tag: [],
         tip_summary: "",
@@ -174,12 +211,11 @@ Avoid collecting names, locations, or personal identifiers.
         resource_suggestion: "",
         escalation: "none"
       };
-    }
 
     parsed.crisisFlag = parsed.escalation === "crisis-988";
-    return res.status(200).json(parsed);
+    return send(res, 200, parsed);
   } catch (err) {
     console.error("Server error:", err);
-    return res.status(500).json({ error: "Server error" });
+    return send(res, 500, { error: "Server error" });
   }
-};
+}

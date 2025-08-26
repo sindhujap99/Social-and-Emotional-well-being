@@ -36,42 +36,18 @@ SAFETY
 - Never ask for personal identifiers (names, locations, etc.).
 
 IMPORTANT OUTPUT RULES
-- Respond ONLY with a valid JSON object that matches the provided schema.
+- Respond ONLY with a valid JSON object with these fields:
+  message_student (string),
+  feeling_label (one of: anxious, sad, mad, stressed, lonely, mixed, unsure, calm, happy, positive),
+  skill_tag (array of strings),
+  tip_summary (string),
+  next_step_prompt (string),
+  resource_suggestion (string, optional),
+  escalation (one of: none, encourage-counselor, crisis-988).
 - Do NOT include any extra text, comments, or code fences.
 - Do NOT repeat keys or add unspecified fields.
 - The JSON must be directly parseable by JavaScript JSON.parse.
 `.trim();
-
-/* ---------------------- Response Schema (clean) ---------------------- */
-const RESPONSE_SCHEMA = {
-  type: "OBJECT",
-  properties: {
-    message_student: { type: "STRING" },
-    feeling_label: {
-      type: "STRING",
-      enum: [
-        "anxious", "sad", "mad", "stressed", "lonely", "mixed", "unsure",
-        "calm", "happy", "positive"
-      ]
-    },
-    skill_tag: { type: "ARRAY", items: { type: "STRING" } },
-    tip_summary: { type: "STRING" },
-    next_step_prompt: { type: "STRING" },
-    resource_suggestion: { type: "STRING" },
-    escalation: {
-      type: "STRING",
-      enum: ["none", "encourage-counselor", "crisis-988"]
-    }
-  },
-  required: [
-    "message_student",
-    "feeling_label",
-    "skill_tag",
-    "tip_summary",
-    "next_step_prompt",
-    "escalation"
-  ]
-};
 
 /* ---------------------- Helpers ---------------------- */
 function send(res, status, json) {
@@ -83,7 +59,7 @@ function send(res, status, json) {
 function coerceJsonFromModel(text) {
   if (typeof text !== "string") return null;
 
-  // Strip ```json fences and normalize quotes
+  // Strip ```json fences & normalize quotes
   let s = text.trim()
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/```$/i, "")
@@ -121,12 +97,8 @@ export default async function handler(req, res) {
       (typeof body.userMessage === "string" ? body.userMessage : "");
     const userText = (raw || "").trim().replace(/\s+/g, " ");
 
-    if (!userText) {
-      return send(res, 400, { error: "Missing 'text' (or 'userMessage')" });
-    }
-    if (userText.length > 2000) {
-      return send(res, 413, { error: "Input too long" });
-    }
+    if (!userText) return send(res, 400, { error: "Missing 'text' (or 'userMessage')" });
+    if (userText.length > 2000) return send(res, 413, { error: "Input too long" });
 
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
 
@@ -134,9 +106,8 @@ export default async function handler(req, res) {
       systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
       contents: [{ role: "user", parts: [{ text: userText }] }],
       generationConfig: {
-        // Enforce structured JSON (camelCase only)
+        // Keep JSON-only output; omit responseSchema to avoid INVALID_ARGUMENT
         responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA,
         temperature: 0.6,
         maxOutputTokens: 300
       }
@@ -161,7 +132,6 @@ export default async function handler(req, res) {
         const msg = data?.error?.message || "Upstream error";
         console.error("Gemini API error", { status: r.status, msg });
         clearTimeout(timeout);
-        // Surface details in dev to speed up debugging
         return send(res, r.status, { error: DEV ? `Upstream ${r.status}: ${msg}` : "Upstream error" });
       }
     } catch (err) {
@@ -173,7 +143,7 @@ export default async function handler(req, res) {
       clearTimeout(timeout);
     }
 
-    // Safety block → safe, simple object
+    // Safety block → safe minimal object
     if (data?.promptFeedback?.blockReason) {
       return send(res, 200, {
         message_student:
@@ -188,7 +158,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // With structured output, the model returns JSON as a string in .text
+    // Parse model text (should be JSON)
     const jsonText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (typeof jsonText !== "string") {
       return send(res, 502, { error: "Invalid upstream response shape" });
@@ -198,7 +168,6 @@ export default async function handler(req, res) {
       console.log("Gemini preview:", jsonText.slice(0, 200));
     }
 
-    // Parse or fallback gently
     let parsed = coerceJsonFromModel(jsonText);
     if (!parsed) {
       parsed = {

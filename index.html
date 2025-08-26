@@ -134,14 +134,14 @@
 
     <div class="main">
       <!-- CHAT AREA -->
-      <section class="chat" id="chat" aria-live="polite">
+      <section class="chat" id="chat" aria-live="polite" aria-label="Chat messages">
         <div class="bubble bot">
           Hi! I’m here to listen and help you plan next steps. I’m not a crisis line, but I can suggest ways to get support. What’s on your mind?
         </div>
       </section>
 
       <!-- SIDE PANEL (no images) -->
-      <aside class="panel">
+      <aside class="panel" aria-label="Response details">
         <div class="card" id="labelsCard" style="display:none">
           <strong>Labels</strong>
           <div class="badges" id="labels"></div>
@@ -166,8 +166,8 @@
 
     <!-- COMPOSER -->
     <div class="composer" style="padding: 0 18px 10px">
-      <textarea id="input" placeholder="Type like a student... e.g., 'I failed my math test and I'm scared to tell my parents.'"></textarea>
-      <button id="sendBtn">Send</button>
+      <textarea id="input" placeholder="Type like a student... e.g., 'I failed my math test and I'm scared to tell my parents.'" aria-label="Message"></textarea>
+      <button id="sendBtn" aria-live="polite">Send</button>
       <button id="exportJsonBtn" class="ghost">Export JSON</button>
       <button id="exportCsvBtn" class="ghost">Export CSV</button>
     </div>
@@ -231,7 +231,11 @@
       addBubble(text, 'me');
       recordUser(text);
       input.value = '';
+      input.disabled = true;
       sendBtn.disabled = true;
+      sendBtn.setAttribute('aria-busy', 'true');
+      const prev = sendBtn.textContent;
+      sendBtn.textContent = 'Sending…';
 
       try{
         const res = await fetch('/api/chat', {
@@ -278,13 +282,28 @@
         addBubble('Sorry—something went wrong. Please try again.', 'bot');
         console.error(err);
       }finally{
+        sendBtn.textContent = prev;
+        sendBtn.removeAttribute('aria-busy');
         sendBtn.disabled = false;
+        input.disabled = false;
         input.focus();
       }
     }
 
+    // Click to send
     sendBtn.addEventListener('click', send);
-    input.addEventListener('keydown', (e)=>{ if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); }});
+
+    // Keyboard: Enter to send, Shift+Enter for newline, Ctrl/Cmd+Enter to send
+    input.addEventListener('keydown', (e)=>{
+      if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey){
+        e.preventDefault(); send();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault(); send();
+      }
+    });
+
+    // Autofocus on load
+    window.addEventListener('load', ()=> input.focus());
 
     // ===== Export buttons =====
     function download(filename, content, mime="application/octet-stream"){

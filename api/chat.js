@@ -1,8 +1,9 @@
 // /pages/api/chat.js — Vercel Serverless Function (Next.js Pages API)
 
-// Allow overriding the model via env
+// Env
 const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+const DEV = process.env.NODE_ENV !== "production";
 
 /* ---------------------- System Prompt (updated) ---------------------- */
 const SYSTEM_PROMPT = `
@@ -36,12 +37,12 @@ SAFETY
 
 IMPORTANT OUTPUT RULES
 - Respond ONLY with a valid JSON object that matches the provided schema.
-- Do NOT include any extra text, comments, apologies, or code fences.
+- Do NOT include any extra text, comments, or code fences.
 - Do NOT repeat keys or add unspecified fields.
 - The JSON must be directly parseable by JavaScript JSON.parse.
 `.trim();
 
-/* ---------------------- Response Schema ---------------------- */
+/* ---------------------- Response Schema (clean) ---------------------- */
 const RESPONSE_SCHEMA = {
   type: "OBJECT",
   properties: {
@@ -69,15 +70,6 @@ const RESPONSE_SCHEMA = {
     "tip_summary",
     "next_step_prompt",
     "escalation"
-  ],
-  propertyOrdering: [
-    "message_student",
-    "feeling_label",
-    "skill_tag",
-    "tip_summary",
-    "next_step_prompt",
-    "resource_suggestion",
-    "escalation"
   ]
 };
 
@@ -91,26 +83,22 @@ function send(res, status, json) {
 function coerceJsonFromModel(text) {
   if (typeof text !== "string") return null;
 
-  // Strip ```json fences if present
+  // Strip ```json fences and normalize quotes
   let s = text.trim()
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/```$/i, "")
-    .trim();
-
-  // Replace smart quotes
-  s = s
+    .trim()
     .replace(/[\u201C\u201D\u2033]/g, '"')
     .replace(/[\u2018\u2019\u2032]/g, "'");
 
   // Try parse directly
   try { return JSON.parse(s); } catch {}
 
-  // Extract the first outermost { ... } block (regex rescue)
+  // Regex rescue: first {...} block
   const match = s.match(/\{[\s\S]*\}/);
   if (match) {
     try { return JSON.parse(match[0]); } catch {}
   }
-
   return null;
 }
 
@@ -146,10 +134,7 @@ export default async function handler(req, res) {
       systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
       contents: [{ role: "user", parts: [{ text: userText }] }],
       generationConfig: {
-        // Enforce structured JSON
-        response_mime_type: "application/json",
-        response_schema: RESPONSE_SCHEMA,
-        // camelCase mirrors (some gateways look for these)
+        // Enforce structured JSON (camelCase only)
         responseMimeType: "application/json",
         responseSchema: RESPONSE_SCHEMA,
         temperature: 0.6,
@@ -173,12 +158,11 @@ export default async function handler(req, res) {
       data = await r.json();
 
       if (!r.ok) {
-        console.error("Gemini API error", {
-          status: r.status,
-          message: data?.error?.message || "Unknown upstream error"
-        });
+        const msg = data?.error?.message || "Upstream error";
+        console.error("Gemini API error", { status: r.status, msg });
         clearTimeout(timeout);
-        return send(res, r.status, { error: data?.error?.message || "Upstream error" });
+        // Surface details in dev to speed up debugging
+        return send(res, r.status, { error: DEV ? `Upstream ${r.status}: ${msg}` : "Upstream error" });
       }
     } catch (err) {
       clearTimeout(timeout);
@@ -189,7 +173,7 @@ export default async function handler(req, res) {
       clearTimeout(timeout);
     }
 
-    // Handle safety blocks gracefully
+    // Safety block → safe, simple object
     if (data?.promptFeedback?.blockReason) {
       return send(res, 200, {
         message_student:
@@ -209,12 +193,14 @@ export default async function handler(req, res) {
     if (typeof jsonText !== "string") {
       return send(res, 502, { error: "Invalid upstream response shape" });
     }
+    if (DEV) {
+      console.log("Gemini text len:", jsonText.length);
+      console.log("Gemini preview:", jsonText.slice(0, 200));
+    }
 
-    // Try to coerce/parse; if it fails, use a gentle fallback
+    // Parse or fallback gently
     let parsed = coerceJsonFromModel(jsonText);
-
     if (!parsed) {
-      // Last-resort fallback keeps UI usable without showing raw blobs
       parsed = {
         message_student:
           "I want to help, but I couldn’t process that. Could you say it a different way?",

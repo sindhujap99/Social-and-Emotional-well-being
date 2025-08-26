@@ -1,11 +1,8 @@
-// /pages/api/chat.js — Vercel Serverless Function (Next.js Pages API)
-
-// Env
+console.log("Try programiz.pro");
 const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
 const DEV = process.env.NODE_ENV !== "production";
 
-/* ---------------------- System Prompt ---------------------- */
 const SYSTEM_PROMPT = `
 You are a supportive school wellbeing guide for students ages 11–18. Many students hesitate to talk to parents, teachers, or counselors, so your role is to gently build trust, normalize their feelings, and suggest safe, constructive ways to reach out for support.
 
@@ -48,7 +45,6 @@ Never provide instructions for dangerous activities.
 Avoid collecting names, locations, or personal identifiers.
 `.trim();
 
-/* ---------------------- Helpers ---------------------- */
 function send(res, status, json) {
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Cache-Control", "no-store");
@@ -58,7 +54,6 @@ function send(res, status, json) {
 function coerceJsonFromModel(text) {
   if (typeof text !== "string") return null;
 
-  // Strip ```json fences & normalize quotes
   let s = text.trim()
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/```$/i, "")
@@ -66,10 +61,8 @@ function coerceJsonFromModel(text) {
     .replace(/[\u201C\u201D\u2033]/g, '"')
     .replace(/[\u2018\u2019\u2032]/g, "'");
 
-  // Try parse directly
   try { return JSON.parse(s); } catch {}
 
-  // Regex rescue: first {...} block
   const match = s.match(/\{[\s\S]*\}/);
   if (match) {
     try { return JSON.parse(match[0]); } catch {}
@@ -77,7 +70,6 @@ function coerceJsonFromModel(text) {
   return null;
 }
 
-/* ---------------------- Handler ---------------------- */
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -89,7 +81,6 @@ export default async function handler(req, res) {
       return send(res, 500, { error: "Missing GEMINI_API_KEY on server" });
     }
 
-    // Accept either { text } or { userMessage }
     const body = req.body || {};
     const raw =
       (typeof body.text === "string" ? body.text : "") ||
@@ -111,7 +102,6 @@ export default async function handler(req, res) {
       }
     };
 
-    // Timeout protection
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
 
@@ -128,20 +118,19 @@ export default async function handler(req, res) {
 
       if (!r.ok) {
         const msg = data?.error?.message || "Upstream error";
-        console.error("Gemini API error", { status: r.status, msg });
+        if (DEV) console.error("Gemini API error", { status: r.status, msg });
         clearTimeout(timeout);
         return send(res, r.status, { error: DEV ? `Upstream ${r.status}: ${msg}` : "Upstream error" });
       }
     } catch (err) {
       clearTimeout(timeout);
       const aborted = err?.name === "AbortError";
-      console.error("Gemini fetch failed", { aborted, err: String(err) });
+      if (DEV) console.error("Gemini fetch failed", { aborted, err: String(err) });
       return send(res, 504, { error: aborted ? "Upstream timeout" : "Upstream fetch failed" });
     } finally {
       clearTimeout(timeout);
     }
 
-    // Safety block → safe minimal object
     if (data?.promptFeedback?.blockReason) {
       return send(res, 200, {
         message_student:
@@ -156,7 +145,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Parse model text (should be JSON)
     const jsonText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (typeof jsonText !== "string") {
       return send(res, 502, { error: "Invalid upstream response shape" });
@@ -183,7 +171,7 @@ export default async function handler(req, res) {
     parsed.crisisFlag = parsed.escalation === "crisis-988";
     return send(res, 200, parsed);
   } catch (err) {
-    console.error("Server error:", err);
+    if (DEV) console.error("Server error:", err);
     return send(res, 500, { error: "Server error" });
   }
 }
